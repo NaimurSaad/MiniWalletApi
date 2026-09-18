@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("WalletDb"));
 
-builder.Services.AddSingleton<AuditNotificationService>();
+builder.Services.AddScoped<AuditNotificationService>();
 
 var app = builder.Build();
 
@@ -127,13 +127,16 @@ app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, 
         });
 
         db.SaveChanges();
+    }
+    await auditor.SendAuditLogAsync(
+        $"Transferred {request.Amount} from Wallet {sender.Id} to {receiver.Id}");
 
-        return Results.Ok(new
+    return Results.Ok(new
         {
             Message = "Transfer successful",
             SenderBalance = sender.Balance
         });
-    }
+    
 });
 
 app.Run();
@@ -171,19 +174,10 @@ public record TransferRequest(int SenderWalletId, int ReceiverWalletId, decimal 
 // -------------------------------------------------------------
 public class AuditNotificationService
 {
-    private readonly IServiceProvider _serviceProvider;
-
-    public AuditNotificationService(IServiceProvider serviceProvider)
+    public async Task SendAuditLogAsync(string message)
     {
-        _serviceProvider = serviceProvider;
-    }
+        await Task.Delay(50);
 
-    public void SendAuditLogSync(string message)
-    {
-        Task.Run(async () =>
-        {
-            await Task.Delay(50);
-            Console.WriteLine($"[AUDIT LOGGED]: {message}");
-        }).Wait();
+        Console.WriteLine($"[AUDIT LOGGED]: {message}");
     }
 }
