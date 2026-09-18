@@ -4,6 +4,12 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 
+var apiKeys = new Dictionary<string, int>
+{
+    ["alice-key"] = 1,
+    ["bob-key"] = 2
+};
+
 // Service Registration
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("WalletDb"));
@@ -37,8 +43,23 @@ using (var scope = app.Services.CreateScope())
 // -------------------------------------------------------------
 // Transaction History
 // -------------------------------------------------------------
-app.MapGet("/api/wallets/{id}/transactions", async (int id, AppDbContext db) =>
+app.MapGet("/api/wallets/{id}/transactions", async (int id, HttpRequest request, AppDbContext db) =>
 {
+    if (!request.Headers.TryGetValue("X-API-Key", out var apiKey))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!apiKeys.TryGetValue(apiKey.ToString(), out var walletId))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (walletId != id)
+    {
+        return Results.StatusCode(403);
+    }
+
     var wallet = await db.Wallets
         .AsNoTracking()
         .FirstOrDefaultAsync(w => w.Id == id);
@@ -64,8 +85,24 @@ app.MapGet("/api/wallets/{id}/transactions", async (int id, AppDbContext db) =>
 // -------------------------------------------------------------
 // Fund Transfer
 // -------------------------------------------------------------
-app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, AppDbContext db, AuditNotificationService auditor) =>
+app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, HttpRequest httpRequest,
+    AppDbContext db,
+    AuditNotificationService auditor) =>
 {
+    if (!httpRequest.Headers.TryGetValue("X-API-Key", out var apiKey))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!apiKeys.TryGetValue(apiKey.ToString(), out var walletId))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (walletId != request.SenderWalletId)
+    {
+        return Results.StatusCode(403);
+    }
     // Validate transfer amount
     if (request.Amount <= 0)
     {
