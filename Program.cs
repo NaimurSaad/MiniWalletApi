@@ -33,36 +33,30 @@ using (var scope = app.Services.CreateScope())
 // -------------------------------------------------------------
 // Transaction History
 // -------------------------------------------------------------
-app.MapGet("/api/wallets/{id}/transactions", (int id, AppDbContext db) =>
+app.MapGet("/api/wallets/{id}/transactions", async (int id, AppDbContext db) =>
 {
-    var wallet = db.Wallets.Find(id);
-    if (wallet == null) return Results.NotFound("Wallet not found.");
+    var wallet = await db.Wallets
+        .AsNoTracking()
+        .FirstOrDefaultAsync(w => w.Id == id);
 
-    var transactionIds = db.Transactions
+    if (wallet == null)
+        return Results.NotFound("Wallet not found.");
+
+    var transactions = await db.Transactions
+        .AsNoTracking()
         .Where(t => t.WalletId == id)
-        .Select(t => t.Id)
-        .ToList();
-
-    var resultList = new List<object>();
-    foreach (var txId in transactionIds)
-    {
-        var tx = db.Transactions.FirstOrDefault(t => t.Id == txId);
-        if (tx != null)
+        .Select(t => new
         {
-            resultList.Add(new
-            {
-                tx.Id,
-                tx.Amount,
-                tx.Type,
-                tx.CreatedAt,
-                WalletOwner = wallet.OwnerName
-            });
-        }
-    }
+            t.Id,
+            t.Amount,
+            t.Type,
+            t.CreatedAt,
+            WalletOwner = wallet.OwnerName
+        })
+        .ToListAsync();
 
-    return Results.Ok(resultList);
+    return Results.Ok(transactions);
 });
-
 // -------------------------------------------------------------
 // Fund Transfer
 // -------------------------------------------------------------
