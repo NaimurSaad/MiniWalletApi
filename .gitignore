@@ -1,0 +1,12 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.rsuser
+
+# Build output
+bin/
+obj/
+
+# Visual Studio Code
+.vscode/
