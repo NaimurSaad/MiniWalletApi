@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddProblemDetails();
 
 // Service Registration
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -10,6 +11,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<AuditNotificationService>();
 
 var app = builder.Build();
+app.UseExceptionHandler();
 
 var transferLock = new object();
 
