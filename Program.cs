@@ -11,6 +11,8 @@ builder.Services.AddSingleton<AuditNotificationService>();
 
 var app = builder.Build();
 
+var transferLock = new object();
+
 // Database Initialization & Seed Data
 using (var scope = app.Services.CreateScope())
 {
@@ -62,20 +64,51 @@ app.MapGet("/api/wallets/{id}/transactions", async (int id, AppDbContext db) =>
 // -------------------------------------------------------------
 app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, AppDbContext db, AuditNotificationService auditor) =>
 {
+    // Validate transfer amount
+    if (request.Amount <= 0)
+    {
+        return Results.BadRequest(new
+        {
+            Message = "Transfer amount must be greater than zero."
+        });
+    }
+
+    // Prevent transferring to the same wallet
+    if (request.SenderWalletId == request.ReceiverWalletId)
+    {
+        return Results.BadRequest(new
+        {
+            Message = "Sender and receiver wallets must be different."
+        });
+    }
+
     var sender = await db.Wallets.FindAsync(request.SenderWalletId);
     var receiver = await db.Wallets.FindAsync(request.ReceiverWalletId);
 
     if (sender == null || receiver == null)
-        return Results.BadRequest("Invalid sender or receiver wallet.");
-
-    if (sender.Balance >= request.Amount)
     {
-        // Simulate background processing latency
-        await Task.Delay(100);
+        return Results.BadRequest(new
+        {
+            Message = "Invalid sender or receiver wallet."
+        });
+    }
 
+    lock (transferLock)
+    {
+        // Check balance inside the lock
+        if (sender.Balance < request.Amount)
+        {
+            return Results.BadRequest(new
+            {
+                Message = "Insufficient funds."
+            });
+        }
+
+        // Update balances
         sender.Balance -= request.Amount;
         receiver.Balance += request.Amount;
 
+        // Record outgoing transaction
         db.Transactions.Add(new Transaction
         {
             WalletId = sender.Id,
@@ -84,6 +117,7 @@ app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, 
             CreatedAt = DateTime.UtcNow
         });
 
+        // Record incoming transaction
         db.Transactions.Add(new Transaction
         {
             WalletId = receiver.Id,
@@ -92,15 +126,14 @@ app.MapPost("/api/wallets/transfer", async ([FromBody] TransferRequest request, 
             CreatedAt = DateTime.UtcNow
         });
 
-        await db.SaveChangesAsync();
+        db.SaveChanges();
 
-        // Dispatch audit notification
-        auditor.SendAuditLogSync($"Transferred {request.Amount} from Wallet {sender.Id} to {receiver.Id}");
-
-        return Results.Ok(new { Message = "Transfer successful", SenderBalance = sender.Balance });
+        return Results.Ok(new
+        {
+            Message = "Transfer successful",
+            SenderBalance = sender.Balance
+        });
     }
-
-    return Results.BadRequest("Insufficient funds.");
 });
 
 app.Run();
